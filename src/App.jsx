@@ -18,6 +18,11 @@ function App() {
   const [activeMenu, setActiveMenu] = useState(null);
   const menuRef = useRef(null);
 
+  // --- PROGRESS CALCULATIONS ---
+  const totalTasks = tasks.todo.length + tasks.inProgress.length + tasks.done.length;
+  const completedTasks = tasks.done.length;
+  const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
   useEffect(() => {
     localStorage.setItem('kanban-theme', JSON.stringify(isDarkMode));
   }, [isDarkMode]);
@@ -104,33 +109,65 @@ function App() {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      // Dynamic padding for mobile
       padding: 'clamp(20px, 5vw, 60px) clamp(10px, 3vw, 20px)',
       fontFamily: '"Inter", sans-serif',
       transition: 'background-image 0.5s ease-in-out',
       boxSizing: 'border-box',
       overflowX: 'hidden'
     }}>
-      <div style={{ width: '100%', maxWidth: '1200px', position: 'relative' }}>
+      <style>{`
+        .kanban-column { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease !important; }
+        .kanban-column:hover { transform: translateY(-10px); }
+        .task-card { transition: transform 0.2s ease, background-color 0.2s ease !important; }
+        .task-card:hover { transform: scale(1.02); background-color: ${isDarkMode ? '#2d3748' : '#ffffff'} !important; }
+        .progress-bar { transition: width 0.8s cubic-bezier(0.65, 0, 0.35, 1); }
+      `}</style>
+
+      <div style={{ width: '100%', maxWidth: '1400px', position: 'relative' }}>
         
+        {/* 🟢 ENHANCED PROGRESS TRACKER (Top Left) */}
+        <div style={{
+          position: 'absolute', top: '-15px', left: '10px',
+          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.4)',
+          backdropFilter: 'blur(15px)', padding: '16px 24px', borderRadius: '22px',
+          border: isDarkMode ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.3)',
+          display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '200px', zIndex: 5,
+          boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: '900', color: isDarkMode ? '#cbd5e1' : '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Board Progress
+            </span>
+            <span style={{ fontSize: '1.1rem', fontWeight: '900', color: isDarkMode ? '#f1f5f9' : '#1e293b' }}>
+              {progress}%
+            </span>
+          </div>
+          <div style={{ width: '100%', height: '10px', backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+            <div className="progress-bar" style={{ 
+              width: `${progress}%`, height: '100%', 
+              backgroundColor: progress === 100 ? '#22c55e' : '#2563eb',
+              boxShadow: progress > 0 ? `0 0 15px ${progress === 100 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(37, 99, 235, 0.6)'}` : 'none'
+            }}></div>
+          </div>
+        </div>
+
         <button 
           onClick={() => setIsDarkMode(!isDarkMode)}
           style={{
             position: 'absolute', top: '-10px', right: '10px',
             backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'white',
-            border: 'none', borderRadius: '50%', width: '40px', height: '40px',
-            cursor: 'pointer', fontSize: '1.1rem', boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+            border: 'none', borderRadius: '50%', width: '45px', height: '45px',
+            cursor: 'pointer', fontSize: '1.2rem', boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 10
+            zIndex: 10, color: isDarkMode ? 'white' : 'black'
           }}
         >
           {isDarkMode ? '🌙' : '☀️'}
         </button>
 
-        <header style={{ textAlign: 'center', marginBottom: '40px' }}>
-          {/* Responsive font size */}
+        <header style={{ textAlign: 'center', marginBottom: '40px', paddingTop: '60px' }}>
           <h1 style={{ 
-            fontSize: 'clamp(2rem, 8vw, 3.5rem)', fontWeight: '900', 
+            fontSize: 'clamp(2.2rem, 8vw, 3.8rem)', fontWeight: '900', 
             color: isDarkMode ? '#f8fafc' : '#1f2937', 
             marginBottom: '20px', letterSpacing: '-0.02em' 
           }}>
@@ -144,21 +181,21 @@ function App() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
-                width: '90%', maxWidth: '400px', padding: '12px 20px',
-                borderRadius: '15px', border: 'none', outline: 'none',
-                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.4)',
-                backdropFilter: 'blur(10px)', color: isDarkMode ? 'white' : '#1f2937',
-                fontSize: '1rem', boxShadow: '0 4px 15px rgba(0,0,0,0.05)',
-                border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : 'none'
+                width: '90%', maxWidth: '450px', padding: '14px 24px',
+                borderRadius: '18px', border: 'none', outline: 'none',
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.45)',
+                backdropFilter: 'blur(12px)', color: isDarkMode ? 'white' : '#1f2937',
+                fontSize: '1rem', boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+                border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(255,255,255,0.2)'
               }}
             />
 
             <button 
               onClick={() => { setIsEditing(null); setNewTask({ title: '', description: '', priority: 'low' }); setShowModal(true); }} 
               style={{ 
-                backgroundColor: '#2563eb', color: 'white', padding: '12px 28px', 
-                borderRadius: '12px', border: 'none', cursor: 'pointer', 
-                fontWeight: 'bold', fontSize: '0.95rem'
+                backgroundColor: '#2563eb', color: 'white', padding: '14px 36px', 
+                borderRadius: '16px', border: 'none', cursor: 'pointer', 
+                fontWeight: 'bold', fontSize: '1rem', boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.4)'
               }}
             >
               + Add New Task
@@ -166,90 +203,97 @@ function App() {
           </div>
         </header>
 
+        {/* --- REST OF THE CODE REMAINS THE SAME --- */}
         {showModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-            <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '30px', borderRadius: '24px', width: '90%', maxWidth: '400px' }}>
-              <h2 style={{ marginBottom: '20px', fontWeight: '800', color: isDarkMode ? '#f1f5f9' : '#111827' }}>{isEditing ? 'Edit Task' : 'New Task'}</h2>
+            <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+              <h2 style={{ marginBottom: '25px', fontWeight: '800', color: isDarkMode ? '#f1f5f9' : '#111827' }}>{isEditing ? 'Edit Task' : 'New Task'}</h2>
               <form onSubmit={handleSaveTask}>
                 <input 
                   type="text" placeholder="Title" required
                   value={newTask.title}
                   onChange={(e) => setNewTask({...newTask, title: e.target.value})}
-                  style={{ width: '100%', padding: '12px', marginBottom: '12px', borderRadius: '10px', border: '1px solid #f3f4f6', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: isDarkMode ? '1px solid #334155' : '1px solid #e5e7eb', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? 'white' : 'black', boxSizing: 'border-box' }}
                 />
                 <textarea 
                   placeholder="Description"
                   value={newTask.description}
                   onChange={(e) => setNewTask({...newTask, description: e.target.value})}
-                  style={{ width: '100%', padding: '12px', marginBottom: '12px', borderRadius: '10px', border: '1px solid #f3f4f6', height: '80px', resize: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: isDarkMode ? '1px solid #334155' : '1px solid #e5e7eb', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? 'white' : 'black', height: '100px', resize: 'none', boxSizing: 'border-box' }}
                 />
                 <select 
                   value={newTask.priority}
                   onChange={(e) => setNewTask({...newTask, priority: e.target.value})}
-                  style={{ width: '100%', padding: '12px', marginBottom: '20px', borderRadius: '10px', border: '1px solid #f3f4f6', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '14px', marginBottom: '25px', borderRadius: '12px', border: isDarkMode ? '1px solid #334155' : '1px solid #e5e7eb', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? 'white' : 'black', boxSizing: 'border-box' }}
                 >
                   <option value="high">High Priority</option>
                   <option value="medium">Medium Priority</option>
                   <option value="low">Low Priority</option>
                 </select>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '10px', border: 'none', fontWeight: 'bold' }}>Save</button>
-                  <button type="button" onClick={() => setShowModal(false)} style={{ flex: 1, backgroundColor: isDarkMode ? '#334155' : '#f3f4f6', color: isDarkMode ? '#cbd5e1' : '#6b7280', padding: '12px', borderRadius: '10px', border: 'none' }}>Cancel</button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 'bold' }}>Save</button>
+                  <button type="button" onClick={() => setShowModal(false)} style={{ flex: 1, backgroundColor: isDarkMode ? '#334155' : '#f3f4f6', color: isDarkMode ? '#cbd5e1' : '#6b7280', padding: '14px', borderRadius: '12px', border: 'none' }}>Cancel</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* MOBILE RESPONSIVE GRID: flexWrap + minWidth */}
         <div style={{ 
-          display: 'flex', 
-          flexWrap: 'wrap', 
-          gap: '20px', 
-          justifyContent: 'center',
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
+          gap: '30px', 
           width: '100%'
         }}>
           {['todo', 'inProgress', 'done'].map((col) => (
             <div 
               key={col} onDragOver={onDragOver} onDrop={(e) => onDrop(e, col)}
+              className="kanban-column"
               style={{ 
-                backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.45)', 
-                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-                padding: '20px', borderRadius: '24px', 
-                flex: '1 1 300px', // Shrinks to 300px then stacks
-                maxWidth: '400px',
-                minHeight: '400px', border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : 'none', 
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.04)'
+                backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.82)' : 'rgba(255, 255, 255, 0.45)', 
+                backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
+                padding: '25px', borderRadius: '32px', 
+                minHeight: '550px', border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.3)', 
+                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.06)',
+                display: 'flex', flexDirection: 'column'
               }}
             >
-              <h2 style={{ textTransform: 'uppercase', fontSize: '0.8rem', fontWeight: '900', color: isDarkMode ? '#cbd5e1' : '#4b5563', marginBottom: '25px', textAlign: 'center', letterSpacing: '0.1em' }}>
+              <h2 style={{ textTransform: 'uppercase', fontSize: '0.85rem', fontWeight: '900', color: isDarkMode ? '#94a3b8' : '#475569', marginBottom: '30px', textAlign: 'center', letterSpacing: '0.15em' }}>
                 {col === 'inProgress' ? '🚀 In Progress' : col === 'todo' ? '📝 To Do' : '✅ Done'}
               </h2>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 {[...tasks[col]]
                   .filter(task => task.title.toLowerCase().includes(searchTerm.toLowerCase()))
                   .sort((a, b) => (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0))
                   .map((task) => (
-                  <div key={task.id} draggable onDragStart={(e) => onDragStart(e, task.id, col)}
+                  <div key={task.id} className="task-card" draggable onDragStart={(e) => onDragStart(e, task.id, col)}
                     style={{ 
                       position: 'relative', 
-                      backgroundColor: isDarkMode ? '#1e293b' : 'rgba(255, 255, 255, 0.9)', 
-                      padding: '18px', borderRadius: '16px', cursor: 'grab', 
-                      border: isDarkMode ? '1px solid rgba(255,255,255,0.03)' : 'none'
+                      backgroundColor: isDarkMode ? '#1e293b' : 'rgba(255, 255, 255, 0.95)', 
+                      padding: '22px', borderRadius: '20px', cursor: 'grab', 
+                      border: isDarkMode ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: getDotColor(task.priority) }}></div>
-                        <span style={{ fontSize: '9px', fontWeight: '800', color: isDarkMode ? '#94a3b8' : '#9ca3af' }}>{task.priority}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: getDotColor(task.priority) }}></div>
+                        <span style={{ fontSize: '10px', fontWeight: '800', color: isDarkMode ? '#64748b' : '#9ca3af' }}>{task.priority.toUpperCase()}</span>
                       </div>
                       
-                      <button onClick={() => { setIsEditing({ col, taskId: task.id }); const t = tasks[col].find(x => x.id === task.id); setNewTask({ title: t.title, description: t.description, priority: t.priority }); setShowModal(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d1d5db' }}>⋮</button>
+                      <div style={{ position: 'relative' }} ref={activeMenu === task.id ? menuRef : null}>
+                        <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === task.id ? null : task.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: isDarkMode ? '#475569' : '#cbd5e1', fontSize: '1.2rem' }}>⋮</button>
+                        {activeMenu === task.id && (
+                          <div style={{ position: 'absolute', right: 0, top: '25px', backgroundColor: isDarkMode ? '#334155' : 'white', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', zIndex: 20, width: '110px', border: '1px solid #ddd', overflow: 'hidden' }}>
+                            <button onClick={() => { const t = tasks[col].find(x => x.id === task.id); setIsEditing({ col, taskId: task.id }); setNewTask({ title: t.title, description: t.description, priority: t.priority }); setShowModal(true); setActiveMenu(null); }} style={{ display: 'block', width: '100%', padding: '10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem', color: isDarkMode ? 'white' : 'black' }}>Edit</button>
+                            <button onClick={() => deleteTask(col, task.id)} style={{ display: 'block', width: '100%', padding: '10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem', color: '#ef4444' }}>Delete</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: '800', color: isDarkMode ? '#f1f5f9' : '#1f2937' }}>{task.title}</h3>
-                    <p style={{ margin: 0, fontSize: '0.8rem', color: isDarkMode ? '#94a3b8' : '#6b7280' }}>{task.description}</p>
-                    <button onClick={() => deleteTask(col, task.id)} style={{ position: 'absolute', bottom: '10px', right: '10px', background: 'none', border: 'none', color: '#ef4444', fontSize: '0.7rem', cursor: 'pointer' }}>Delete</button>
+                    <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', fontWeight: '800', color: isDarkMode ? '#f1f5f9' : '#1f2937' }}>{task.title}</h3>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: isDarkMode ? '#94a3b8' : '#6b7280', lineHeight: '1.5' }}>{task.description}</p>
                   </div>
                 ))}
               </div>
