@@ -12,12 +12,12 @@ function App() {
   const menuRef = useRef(null);
   const dragGhost = useRef(null);
   const dragData = useRef({ id: null, col: null });
-  const longPressTimer = useRef(null);
-  const isDragging = useRef(false);
-  const touchStartPos = useRef({ x: 0, y: 0 });
 
+  // Priority mapping for sorting
   const priorityWeight = { 'high': 3, 'medium': 2, 'low': 1 };
-  const progress = Math.round((tasks.done.length / (tasks.todo.length + tasks.inProgress.length + tasks.done.length || 1)) * 100);
+
+  const totalTasks = tasks.todo.length + tasks.inProgress.length + tasks.done.length;
+  const progress = totalTasks > 0 ? Math.round((tasks.done.length / totalTasks) * 100) : 0;
 
   useEffect(() => {
     localStorage.setItem('kanban-theme', JSON.stringify(isDarkMode));
@@ -32,11 +32,59 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // --- DRAG LOGIC ---
+  const onDragStart = (e, taskId, sourceCol) => {
+    e.dataTransfer.setData("taskId", taskId);
+    e.dataTransfer.setData("sourceCol", sourceCol);
+    e.currentTarget.style.opacity = '0.4';
+  };
+
+  const onDragEnd = (e) => { e.currentTarget.style.opacity = '1'; };
+  const onDragOver = (e) => e.preventDefault();
+
+  const onDrop = (e, destCol) => {
+    const taskId = e.dataTransfer.getData("taskId");
+    const sourceCol = e.dataTransfer.getData("sourceCol");
+    if (sourceCol && destCol && taskId) moveTask(taskId, sourceCol, destCol);
+  };
+
+  // --- TOUCH LOGIC ---
+  const onTouchStart = (e, task, col) => {
+    const touch = e.touches[0];
+    dragData.current = { id: task.id, col: col };
+    if (dragGhost.current) {
+      dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
+      dragGhost.current.style.display = 'block';
+      dragGhost.current.style.left = `${touch.clientX - 50}px`;
+      dragGhost.current.style.top = `${touch.clientY - 20}px`;
+    }
+  };
+
+  const onTouchMove = (e) => {
+    if (dragGhost.current && dragGhost.current.style.display === 'block') {
+      const touch = e.touches[0];
+      dragGhost.current.style.left = `${touch.clientX - 50}px`;
+      dragGhost.current.style.top = `${touch.clientY - 20}px`;
+    }
+  };
+
+  const onTouchEnd = (e) => {
+    if (!dragData.current.id) return;
+    const touch = e.changedTouches[0];
+    if (dragGhost.current) dragGhost.current.style.display = 'none';
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const column = element?.closest('.kanban-column');
+    if (column) {
+      const destCol = column.getAttribute('data-col');
+      moveTask(dragData.current.id, dragData.current.col, destCol);
+    }
+    dragData.current = { id: null, col: null };
+  };
+
   const moveTask = (taskId, sourceCol, destCol) => {
-    if (!sourceCol || !destCol || sourceCol === destCol) return;
+    if (sourceCol === destCol) return;
     const taskToMove = tasks[sourceCol].find(t => t.id === taskId);
     if (!taskToMove) return;
-
     setTasks(prev => ({
       ...prev,
       [sourceCol]: prev[sourceCol].filter(t => t.id !== taskId),
@@ -44,81 +92,18 @@ function App() {
     }));
   };
 
-  // --- REFINED TOUCH LOGIC ---
-  const onTouchStart = (e, task, col) => {
-    if (e.target.closest('button')) return;
-    const touch = e.touches[0];
-    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-    isDragging.current = false;
-
-    longPressTimer.current = setTimeout(() => {
-      isDragging.current = true;
-      dragData.current = { id: task.id, col };
-      if (dragGhost.current) {
-        dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
-        dragGhost.current.style.display = 'block';
-        dragGhost.current.style.left = `${touch.clientX - 50}px`;
-        dragGhost.current.style.top = `${touch.clientY - 20}px`;
-      }
-      if (window.navigator.vibrate) window.navigator.vibrate(40);
-    }, 250); 
-  };
-
-  const onTouchMove = (e) => {
-    const touch = e.touches[0];
-    if (!isDragging.current) {
-      const dx = Math.abs(touch.clientX - touchStartPos.current.x);
-      const dy = Math.abs(touch.clientY - touchStartPos.current.y);
-      if (dx > 10 || dy > 10) clearTimeout(longPressTimer.current);
-      return; 
-    }
-    e.preventDefault(); 
-    if (dragGhost.current) {
-      dragGhost.current.style.left = `${touch.clientX - 50}px`;
-      dragGhost.current.style.top = `${touch.clientY - 20}px`;
-    }
-  };
-
-  const onTouchEnd = (e) => {
-    clearTimeout(longPressTimer.current);
-    if (!isDragging.current || !dragData.current.id) return;
-
-    const touch = e.changedTouches[0];
-    if (dragGhost.current) dragGhost.current.style.display = 'none';
-
-    // NEW BOX-CHECK LOGIC: Instead of checking "what" we touched, 
-    // we check "where" we released our finger relative to the columns.
-    const columns = document.querySelectorAll('.kanban-column');
-    let destCol = null;
-
-    columns.forEach(colEl => {
-      const rect = colEl.getBoundingClientRect();
-      if (
-        touch.clientX >= rect.left &&
-        touch.clientX <= rect.right &&
-        touch.clientY >= rect.top &&
-        touch.clientY <= rect.bottom
-      ) {
-        destCol = colEl.getAttribute('data-col');
-      }
-    });
-    
-    if (destCol) {
-      moveTask(dragData.current.id, dragData.current.col, destCol);
-    }
-    
-    isDragging.current = false;
-    dragData.current = { id: null, col: null };
-  };
-
-  // --- UI Logic (Add, Edit, Delete) ---
   const handleSaveTask = (e) => {
     e.preventDefault();
     if (!newTask.title) return;
     if (isEditing) {
-      setTasks({...tasks, [isEditing.col]: tasks[isEditing.col].map(t => t.id === isEditing.taskId ? { ...t, ...newTask } : t)});
+      setTasks({
+        ...tasks,
+        [isEditing.col]: tasks[isEditing.col].map(t => 
+          t.id === isEditing.taskId ? { ...t, ...newTask } : t
+        )
+      });
     } else {
-      setTasks({...tasks, todo: [...tasks.todo, { ...newTask, id: Date.now().toString() }]});
+      setTasks({ ...tasks, todo: [...tasks.todo, { ...newTask, id: Date.now().toString() }] });
     }
     setShowModal(false);
     setIsEditing(null);
@@ -131,6 +116,8 @@ function App() {
     }
   };
 
+  const getDotColor = (p) => p === 'high' ? '#ef4444' : p === 'medium' ? '#f59e0b' : '#22c55e';
+
   return (
     <div style={{
       backgroundImage: isDarkMode ? 'url("/dark-mode-kanban.jpg")' : 'url("/light-mode-kanban.jpg")',
@@ -139,12 +126,13 @@ function App() {
       padding: '40px 20px', fontFamily: '"Inter", sans-serif', boxSizing: 'border-box', overflowX: 'hidden'
     }}>
       <style>{`
-        .task-card { touch-action: auto; cursor: grab; user-select: none; }
+        .task-card { touch-action: none; cursor: grab; user-select: none; }
         .progress-bar { transition: width 0.8s ease; }
         #drag-ghost {
           position: fixed; pointer-events: none; padding: 10px 20px;
-          background: #2563eb; color: white; border-radius: 12px;
+          background: rgba(37, 99, 235, 0.9); color: white; border-radius: 12px;
           box-shadow: 0 10px 20px rgba(0,0,0,0.3); z-index: 10000; display: none;
+          font-size: 0.9rem; white-space: nowrap;
         }
       `}</style>
 
@@ -181,7 +169,7 @@ function App() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px', width: '100%' }}>
           {['todo', 'inProgress', 'done'].map((col) => (
-            <div key={col} data-col={col} onDragOver={(e) => e.preventDefault()} onDrop={(e) => moveTask(e.dataTransfer.getData("taskId"), e.dataTransfer.getData("sourceCol"), col)} className="kanban-column"
+            <div key={col} data-col={col} onDragOver={onDragOver} onDrop={(e) => onDrop(e, col)} className="kanban-column"
               style={{ backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.82)' : 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(22px)', padding: '25px', borderRadius: '32px', minHeight: '550px' }}
             >
               <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: isDarkMode ? '#94a3b8' : '#475569', marginBottom: '30px', textAlign: 'center' }}>
@@ -189,21 +177,26 @@ function App() {
               </h2>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {/* --- AUTO-SORTING LOGIC INTEGRATED HERE --- */}
                 {tasks[col]
-                  .filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .filter(task => task.title.toLowerCase().includes(searchTerm.toLowerCase()))
                   .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
                   .map((task) => (
                   <div key={task.id} className="task-card" draggable="true" 
-                    onDragStart={(e) => { e.dataTransfer.setData("taskId", task.id); e.dataTransfer.setData("sourceCol", col); }}
-                    onTouchStart={(e) => onTouchStart(e, task, col)} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+                    onDragStart={(e) => onDragStart(e, task.id, col)} 
+                    onDragEnd={onDragEnd}
+                    onTouchStart={(e) => onTouchStart(e, task, col)}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={onTouchEnd}
                     style={{ position: 'relative', backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '22px', borderRadius: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>⠿</span>
-                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#f59e0b' : '#22c55e' }}></div>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: getDotColor(task.priority) }}></div>
                         <span style={{ fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>{task.priority.toUpperCase()}</span>
                       </div>
+                      
                       <div style={{ position: 'relative' }} ref={activeMenu === task.id ? menuRef : null}>
                         <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === task.id ? null : task.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', fontSize: '1.2rem' }}>⋮</button>
                         {activeMenu === task.id && (
@@ -225,7 +218,7 @@ function App() {
       </div>
 
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px' }}>
             <h2 style={{ marginBottom: '25px', color: isDarkMode ? '#f1f5f9' : '#111827' }}>{isEditing ? 'Edit Task' : 'New Task'}</h2>
             <form onSubmit={handleSaveTask}>
@@ -237,8 +230,8 @@ function App() {
                 <option value="high">High Priority</option>
               </select>
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 'bold' }}>Save</button>
-                <button type="button" onClick={() => { setShowModal(false); setIsEditing(null); }} style={{ flex: 1, backgroundColor: '#ccc', padding: '14px', borderRadius: '12px', border: 'none' }}>Cancel</button>
+                <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Save</button>
+                <button type="button" onClick={() => { setShowModal(false); setIsEditing(null); }} style={{ flex: 1, backgroundColor: '#ccc', padding: '14px', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>Cancel</button>
               </div>
             </form>
           </div>
