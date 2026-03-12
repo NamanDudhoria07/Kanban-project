@@ -19,6 +19,18 @@
 * **Netlify** (Continuous Deployment)
 
 ---
+## 📸 Screenshots
+
+### 🌌 Nebula Dark Mode
+
+<img width="1896" height="977" alt="KanbanBlackss" src="https://github.com/user-attachments/assets/aafd3d81-1152-466b-9194-35d36a8e4efb" />
+
+
+### ☀️ Geometric Light Mode
+<img width="1900" height="976" alt="KanbanWhitess" src="https://github.com/user-attachments/assets/533cf549-7e0f-4b43-a838-4cdb7206a853" />
+
+
+---
 
 ## 🔗 Live Deployment
 **Check it out here:** [https://kanbanprojectgdc.netlify.app/](https://kanbanprojectgdc.netlify.app/)
