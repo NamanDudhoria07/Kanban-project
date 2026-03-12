@@ -13,9 +13,12 @@ function App() {
   const dragGhost = useRef(null);
   const dragData = useRef({ id: null, col: null });
 
-  // Priority mapping for sorting
-  const priorityWeight = { 'high': 3, 'medium': 2, 'low': 1 };
+  // --- NEW REFS FOR PRECISION TOUCH ---
+  const longPressTimer = useRef(null);
+  const isDragging = useRef(false);
+  const touchStartPos = useRef({ x: 0, y: 0 });
 
+  const priorityWeight = { 'high': 3, 'medium': 2, 'low': 1 };
   const totalTasks = tasks.todo.length + tasks.inProgress.length + tasks.done.length;
   const progress = totalTasks > 0 ? Math.round((tasks.done.length / totalTasks) * 100) : 0;
 
@@ -32,7 +35,7 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- DRAG LOGIC ---
+  // --- DESKTOP DRAG LOGIC ---
   const onDragStart = (e, taskId, sourceCol) => {
     e.dataTransfer.setData("taskId", taskId);
     e.dataTransfer.setData("sourceCol", sourceCol);
@@ -48,36 +51,74 @@ function App() {
     if (sourceCol && destCol && taskId) moveTask(taskId, sourceCol, destCol);
   };
 
-  // --- TOUCH LOGIC ---
+  // --- UPDATED TOUCH LOGIC (Long-Press & Movement Threshold) ---
   const onTouchStart = (e, task, col) => {
+    if (e.target.closest('button')) return; // Don't drag if clicking buttons
     const touch = e.touches[0];
-    dragData.current = { id: task.id, col: col };
-    if (dragGhost.current) {
-      dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
-      dragGhost.current.style.display = 'block';
-      dragGhost.current.style.left = `${touch.clientX - 50}px`;
-      dragGhost.current.style.top = `${touch.clientY - 20}px`;
-    }
+    
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+    isDragging.current = false;
+
+    // Start timer for long-press
+    longPressTimer.current = setTimeout(() => {
+      isDragging.current = true;
+      dragData.current = { id: task.id, col: col };
+      
+      if (dragGhost.current) {
+        dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
+        dragGhost.current.style.display = 'block';
+        dragGhost.current.style.left = `${touch.clientX - 50}px`;
+        dragGhost.current.style.top = `${touch.clientY - 20}px`;
+      }
+      
+      // Optional: Add a slight vibration if supported
+      if (window.navigator.vibrate) window.navigator.vibrate(40);
+    }, 200); // 200ms threshold
   };
 
   const onTouchMove = (e) => {
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+
+    // If user moves finger significantly before 200ms, cancel the drag (assume scroll)
+    if (!isDragging.current) {
+      if (dx > 8 || dy > 8) {
+        clearTimeout(longPressTimer.current);
+      }
+      return; // Let the browser handle the scroll
+    }
+
+    // If we ARE dragging, prevent scrolling and move ghost
+    e.preventDefault(); 
     if (dragGhost.current && dragGhost.current.style.display === 'block') {
-      const touch = e.touches[0];
       dragGhost.current.style.left = `${touch.clientX - 50}px`;
       dragGhost.current.style.top = `${touch.clientY - 20}px`;
     }
   };
 
   const onTouchEnd = (e) => {
-    if (!dragData.current.id) return;
+    clearTimeout(longPressTimer.current);
+    
+    if (!isDragging.current || !dragData.current.id) {
+        isDragging.current = false;
+        return;
+    }
+
     const touch = e.changedTouches[0];
+    
+    // Hide ghost BEFORE testing the point to prevent it from blocking the column
     if (dragGhost.current) dragGhost.current.style.display = 'none';
+
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
     const column = element?.closest('.kanban-column');
+    
     if (column) {
       const destCol = column.getAttribute('data-col');
       moveTask(dragData.current.id, dragData.current.col, destCol);
     }
+    
+    isDragging.current = false;
     dragData.current = { id: null, col: null };
   };
 
@@ -126,7 +167,7 @@ function App() {
       padding: '40px 20px', fontFamily: '"Inter", sans-serif', boxSizing: 'border-box', overflowX: 'hidden'
     }}>
       <style>{`
-        .task-card { touch-action: none; cursor: grab; user-select: none; }
+        .task-card { touch-action: auto; cursor: grab; user-select: none; }
         .progress-bar { transition: width 0.8s ease; }
         #drag-ghost {
           position: fixed; pointer-events: none; padding: 10px 20px;
@@ -177,7 +218,6 @@ function App() {
               </h2>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {/* --- AUTO-SORTING LOGIC INTEGRATED HERE --- */}
                 {tasks[col]
                   .filter(task => task.title.toLowerCase().includes(searchTerm.toLowerCase()))
                   .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
