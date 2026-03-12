@@ -13,7 +13,7 @@ function App() {
   const dragGhost = useRef(null);
   const dragData = useRef({ id: null, col: null });
 
-  // --- NEW REFS FOR PRECISION TOUCH ---
+  // REFS FOR PRECISION TOUCH [SCROLL FIX]
   const longPressTimer = useRef(null);
   const isDragging = useRef(false);
   const touchStartPos = useRef({ x: 0, y: 0 });
@@ -35,45 +35,51 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- DESKTOP DRAG LOGIC ---
+  // --- SHARED MOVEMENT LOGIC ---
+  const moveTask = (taskId, sourceCol, destCol) => {
+    if (!sourceCol || !destCol || sourceCol === destCol) return;
+    const taskToMove = tasks[sourceCol].find(t => t.id === taskId);
+    if (!taskToMove) return;
+
+    setTasks(prev => ({
+      ...prev,
+      [sourceCol]: prev[sourceCol].filter(t => t.id !== taskId),
+      [destCol]: [...prev[destCol], taskToMove]
+    }));
+  };
+
+  // --- PC DRAG LOGIC ---
   const onDragStart = (e, taskId, sourceCol) => {
     e.dataTransfer.setData("taskId", taskId);
     e.dataTransfer.setData("sourceCol", sourceCol);
     e.currentTarget.style.opacity = '0.4';
   };
-
   const onDragEnd = (e) => { e.currentTarget.style.opacity = '1'; };
   const onDragOver = (e) => e.preventDefault();
-
   const onDrop = (e, destCol) => {
     const taskId = e.dataTransfer.getData("taskId");
     const sourceCol = e.dataTransfer.getData("sourceCol");
-    if (sourceCol && destCol && taskId) moveTask(taskId, sourceCol, destCol);
+    moveTask(taskId, sourceCol, destCol);
   };
 
-  // --- UPDATED TOUCH LOGIC (Long-Press & Movement Threshold) ---
+  // --- MOBILE TOUCH LOGIC (LONG-PRESS & SCROLL FIX) ---
   const onTouchStart = (e, task, col) => {
-    if (e.target.closest('button')) return; // Don't drag if clicking buttons
+    if (e.target.closest('button')) return;
     const touch = e.touches[0];
-    
     touchStartPos.current = { x: touch.clientX, y: touch.clientY };
     isDragging.current = false;
 
-    // Start timer for long-press
     longPressTimer.current = setTimeout(() => {
       isDragging.current = true;
-      dragData.current = { id: task.id, col: col };
-      
+      dragData.current = { id: task.id, col };
       if (dragGhost.current) {
         dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
         dragGhost.current.style.display = 'block';
         dragGhost.current.style.left = `${touch.clientX - 50}px`;
         dragGhost.current.style.top = `${touch.clientY - 20}px`;
       }
-      
-      // Optional: Add a slight vibration if supported
       if (window.navigator.vibrate) window.navigator.vibrate(40);
-    }, 200); // 200ms threshold
+    }, 250); 
   };
 
   const onTouchMove = (e) => {
@@ -81,17 +87,13 @@ function App() {
     const dx = Math.abs(touch.clientX - touchStartPos.current.x);
     const dy = Math.abs(touch.clientY - touchStartPos.current.y);
 
-    // If user moves finger significantly before 200ms, cancel the drag (assume scroll)
     if (!isDragging.current) {
-      if (dx > 8 || dy > 8) {
-        clearTimeout(longPressTimer.current);
-      }
-      return; // Let the browser handle the scroll
+      if (dx > 10 || dy > 10) clearTimeout(longPressTimer.current);
+      return; 
     }
 
-    // If we ARE dragging, prevent scrolling and move ghost
     e.preventDefault(); 
-    if (dragGhost.current && dragGhost.current.style.display === 'block') {
+    if (dragGhost.current) {
       dragGhost.current.style.left = `${touch.clientX - 50}px`;
       dragGhost.current.style.top = `${touch.clientY - 20}px`;
     }
@@ -99,15 +101,9 @@ function App() {
 
   const onTouchEnd = (e) => {
     clearTimeout(longPressTimer.current);
-    
-    if (!isDragging.current || !dragData.current.id) {
-        isDragging.current = false;
-        return;
-    }
+    if (!isDragging.current || !dragData.current.id) return;
 
     const touch = e.changedTouches[0];
-    
-    // Hide ghost BEFORE testing the point to prevent it from blocking the column
     if (dragGhost.current) dragGhost.current.style.display = 'none';
 
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -122,29 +118,14 @@ function App() {
     dragData.current = { id: null, col: null };
   };
 
-  const moveTask = (taskId, sourceCol, destCol) => {
-    if (sourceCol === destCol) return;
-    const taskToMove = tasks[sourceCol].find(t => t.id === taskId);
-    if (!taskToMove) return;
-    setTasks(prev => ({
-      ...prev,
-      [sourceCol]: prev[sourceCol].filter(t => t.id !== taskId),
-      [destCol]: [...prev[destCol], taskToMove]
-    }));
-  };
-
+  // --- UI HANDLERS ---
   const handleSaveTask = (e) => {
     e.preventDefault();
     if (!newTask.title) return;
     if (isEditing) {
-      setTasks({
-        ...tasks,
-        [isEditing.col]: tasks[isEditing.col].map(t => 
-          t.id === isEditing.taskId ? { ...t, ...newTask } : t
-        )
-      });
+      setTasks({...tasks, [isEditing.col]: tasks[isEditing.col].map(t => t.id === isEditing.taskId ? { ...t, ...newTask } : t)});
     } else {
-      setTasks({ ...tasks, todo: [...tasks.todo, { ...newTask, id: Date.now().toString() }] });
+      setTasks({...tasks, todo: [...tasks.todo, { ...newTask, id: Date.now().toString() }]});
     }
     setShowModal(false);
     setIsEditing(null);
@@ -157,12 +138,10 @@ function App() {
     }
   };
 
-  const getDotColor = (p) => p === 'high' ? '#ef4444' : p === 'medium' ? '#f59e0b' : '#22c55e';
-
   return (
     <div style={{
       backgroundImage: isDarkMode ? 'url("/dark-mode-kanban.jpg")' : 'url("/light-mode-kanban.jpg")',
-      backgroundSize: 'cover', backgroundAttachment: 'fixed', minHeight: '100vh',
+      backgroundSize: 'cover', backgroundAttachment: 'fixed', backgroundPosition: 'center', minHeight: '100vh',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       padding: '40px 20px', fontFamily: '"Inter", sans-serif', boxSizing: 'border-box', overflowX: 'hidden'
     }}>
@@ -171,9 +150,8 @@ function App() {
         .progress-bar { transition: width 0.8s ease; }
         #drag-ghost {
           position: fixed; pointer-events: none; padding: 10px 20px;
-          background: rgba(37, 99, 235, 0.9); color: white; border-radius: 12px;
+          background: #2563eb; color: white; border-radius: 12px;
           box-shadow: 0 10px 20px rgba(0,0,0,0.3); z-index: 10000; display: none;
-          font-size: 0.9rem; white-space: nowrap;
         }
       `}</style>
 
@@ -181,11 +159,12 @@ function App() {
 
       <div style={{ width: '100%', maxWidth: '1400px', position: 'relative' }}>
         
-        {/* Progress Board */}
+        {/* Progress Tracker Panel */}
         <div style={{
           position: 'absolute', top: '-15px', left: '10px',
           backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.4)',
-          backdropFilter: 'blur(15px)', padding: '16px 24px', borderRadius: '22px', minWidth: '200px', zIndex: 5
+          backdropFilter: 'blur(15px)', padding: '16px 24px', borderRadius: '22px', minWidth: '200px', zIndex: 5,
+          border: '1px solid rgba(255,255,255,0.2)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.8rem', fontWeight: '900', color: isDarkMode ? '#cbd5e1' : '#475569' }}>BOARD PROGRESS</span>
@@ -219,7 +198,7 @@ function App() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 {tasks[col]
-                  .filter(task => task.title.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase()))
                   .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
                   .map((task) => (
                   <div key={task.id} className="task-card" draggable="true" 
@@ -233,7 +212,7 @@ function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>⠿</span>
-                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: getDotColor(task.priority) }}></div>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#f59e0b' : '#22c55e' }}></div>
                         <span style={{ fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>{task.priority.toUpperCase()}</span>
                       </div>
                       
@@ -258,8 +237,8 @@ function App() {
       </div>
 
       {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px', border: '1px solid rgba(255,255,255,0.1)' }}>
             <h2 style={{ marginBottom: '25px', color: isDarkMode ? '#f1f5f9' : '#111827' }}>{isEditing ? 'Edit Task' : 'New Task'}</h2>
             <form onSubmit={handleSaveTask}>
               <input type="text" placeholder="Title" required value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} style={{ width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #ccc', boxSizing: 'border-box', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? '#fff' : '#000' }} />
@@ -270,8 +249,8 @@ function App() {
                 <option value="high">High Priority</option>
               </select>
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Save</button>
-                <button type="button" onClick={() => { setShowModal(false); setIsEditing(null); }} style={{ flex: 1, backgroundColor: '#ccc', padding: '14px', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 'bold' }}>Save</button>
+                <button type="button" onClick={() => { setShowModal(false); setIsEditing(null); }} style={{ flex: 1, backgroundColor: '#ccc', padding: '14px', borderRadius: '12px', border: 'none' }}>Cancel</button>
               </div>
             </form>
           </div>
