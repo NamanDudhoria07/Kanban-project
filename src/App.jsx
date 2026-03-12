@@ -5,24 +5,84 @@ function App() {
   const [tasks, setTasks] = useState(() => JSON.parse(localStorage.getItem('kanban-tasks')) || { todo: [], inProgress: [], done: [] });
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(null);
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'low' });
+  const [activeMenu, setActiveMenu] = useState(null);
   
-  // Dragging Refs
+  const menuRef = useRef(null);
   const dragGhost = useRef(null);
-  const dragData = useRef({ id: null, col: null, isDragging: false });
-  const longPressTimer = useRef(null);
+  const dragData = useRef({ id: null, col: null });
 
+  // Priority mapping for sorting
   const priorityWeight = { 'high': 3, 'medium': 2, 'low': 1 };
-  const progress = Math.round((tasks.done.length / (tasks.todo.length + tasks.inProgress.length + tasks.done.length || 1)) * 100);
+
+  const totalTasks = tasks.todo.length + tasks.inProgress.length + tasks.done.length;
+  const progress = totalTasks > 0 ? Math.round((tasks.done.length / totalTasks) * 100) : 0;
 
   useEffect(() => {
     localStorage.setItem('kanban-theme', JSON.stringify(isDarkMode));
     localStorage.setItem('kanban-tasks', JSON.stringify(tasks));
   }, [isDarkMode, tasks]);
 
-  // --- SHARED MOVE LOGIC ---
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setActiveMenu(null);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // --- DRAG LOGIC ---
+  const onDragStart = (e, taskId, sourceCol) => {
+    e.dataTransfer.setData("taskId", taskId);
+    e.dataTransfer.setData("sourceCol", sourceCol);
+    e.currentTarget.style.opacity = '0.4';
+  };
+
+  const onDragEnd = (e) => { e.currentTarget.style.opacity = '1'; };
+  const onDragOver = (e) => e.preventDefault();
+
+  const onDrop = (e, destCol) => {
+    const taskId = e.dataTransfer.getData("taskId");
+    const sourceCol = e.dataTransfer.getData("sourceCol");
+    if (sourceCol && destCol && taskId) moveTask(taskId, sourceCol, destCol);
+  };
+
+  // --- TOUCH LOGIC ---
+  const onTouchStart = (e, task, col) => {
+    const touch = e.touches[0];
+    dragData.current = { id: task.id, col: col };
+    if (dragGhost.current) {
+      dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
+      dragGhost.current.style.display = 'block';
+      dragGhost.current.style.left = `${touch.clientX - 50}px`;
+      dragGhost.current.style.top = `${touch.clientY - 20}px`;
+    }
+  };
+
+  const onTouchMove = (e) => {
+    if (dragGhost.current && dragGhost.current.style.display === 'block') {
+      const touch = e.touches[0];
+      dragGhost.current.style.left = `${touch.clientX - 50}px`;
+      dragGhost.current.style.top = `${touch.clientY - 20}px`;
+    }
+  };
+
+  const onTouchEnd = (e) => {
+    if (!dragData.current.id) return;
+    const touch = e.changedTouches[0];
+    if (dragGhost.current) dragGhost.current.style.display = 'none';
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const column = element?.closest('.kanban-column');
+    if (column) {
+      const destCol = column.getAttribute('data-col');
+      moveTask(dragData.current.id, dragData.current.col, destCol);
+    }
+    dragData.current = { id: null, col: null };
+  };
+
   const moveTask = (taskId, sourceCol, destCol) => {
-    if (sourceCol === destCol || !taskId) return;
+    if (sourceCol === destCol) return;
     const taskToMove = tasks[sourceCol].find(t => t.id === taskId);
     if (!taskToMove) return;
     setTasks(prev => ({
@@ -32,145 +92,123 @@ function App() {
     }));
   };
 
-  // --- MOBILE LONG PRESS LOGIC ---
-  const onTouchStart = (e, task, col) => {
-    const touch = e.touches[0];
-    const target = e.currentTarget;
-
-    // Start a timer for 300ms
-    longPressTimer.current = setTimeout(() => {
-      // 1. Give haptic feedback (vibrate)
-      if (window.navigator.vibrate) window.navigator.vibrate(50);
-
-      // 2. Activate Dragging
-      dragData.current = { 
-        id: task.id, 
-        col: col, 
-        isDragging: true,
-        taskTitle: task.title 
-      };
-
-      // 3. Visual feedback
-      target.style.transform = "scale(1.05) rotate(2deg)";
-      target.style.boxShadow = "0 15px 30px rgba(0,0,0,0.2)";
-    }, 300); // 300ms delay
+  const handleSaveTask = (e) => {
+    e.preventDefault();
+    if (!newTask.title) return;
+    if (isEditing) {
+      setTasks({
+        ...tasks,
+        [isEditing.col]: tasks[isEditing.col].map(t => 
+          t.id === isEditing.taskId ? { ...t, ...newTask } : t
+        )
+      });
+    } else {
+      setTasks({ ...tasks, todo: [...tasks.todo, { ...newTask, id: Date.now().toString() }] });
+    }
+    setShowModal(false);
+    setIsEditing(null);
   };
 
-  const onTouchMove = (e) => {
-    const touch = e.touches[0];
-
-    // If they move their finger BEFORE the 300ms is up, cancel the timer (It's a scroll)
-    if (!dragData.current.isDragging) {
-      clearTimeout(longPressTimer.current);
-      return;
-    }
-
-    // If dragging is active, move the ghost and stop scrolling
-    e.preventDefault(); 
-    if (dragGhost.current) {
-      dragGhost.current.innerHTML = `<strong>${dragData.current.taskTitle}</strong>`;
-      dragGhost.current.style.display = 'block';
-      dragGhost.current.style.left = `${touch.clientX - 50}px`;
-      dragGhost.current.style.top = `${touch.clientY - 20}px`;
+  const deleteTask = (col, id) => {
+    if (window.confirm("Delete this task?")) {
+      setTasks({ ...tasks, [col]: tasks[col].filter(t => t.id !== id) });
+      setActiveMenu(null);
     }
   };
 
-  const onTouchEnd = (e) => {
-    // Always clear timer on release
-    clearTimeout(longPressTimer.current);
-
-    if (dragData.current.isDragging) {
-      const touch = e.changedTouches[0];
-      if (dragGhost.current) dragGhost.current.style.display = 'none';
-
-      const element = document.elementFromPoint(touch.clientX, touch.clientY);
-      const column = element?.closest('.kanban-column');
-      
-      if (column) {
-        const destCol = column.getAttribute('data-col');
-        moveTask(dragData.current.id, dragData.current.col, destCol);
-      }
-    }
-
-    // Reset styles
-    e.currentTarget.style.transform = "scale(1)";
-    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.05)";
-    dragData.current = { id: null, isDragging: false };
-  };
+  const getDotColor = (p) => p === 'high' ? '#ef4444' : p === 'medium' ? '#f59e0b' : '#22c55e';
 
   return (
     <div style={{
       backgroundImage: isDarkMode ? 'url("/dark-mode-kanban.jpg")' : 'url("/light-mode-kanban.jpg")',
       backgroundSize: 'cover', backgroundAttachment: 'fixed', minHeight: '100vh',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '40px 20px', fontFamily: '"Inter", sans-serif'
+      padding: '40px 20px', fontFamily: '"Inter", sans-serif', boxSizing: 'border-box', overflowX: 'hidden'
     }}>
       <style>{`
-        .task-card { 
-            touch-action: auto; /* Browser handles scrolling normally */
-            cursor: grab; 
-            user-select: none;
-            transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1);
-        }
+        .task-card { touch-action: none; cursor: grab; user-select: none; }
+        .progress-bar { transition: width 0.8s ease; }
         #drag-ghost {
           position: fixed; pointer-events: none; padding: 10px 20px;
-          background: #2563eb; color: white; border-radius: 12px;
+          background: rgba(37, 99, 235, 0.9); color: white; border-radius: 12px;
           box-shadow: 0 10px 20px rgba(0,0,0,0.3); z-index: 10000; display: none;
+          font-size: 0.9rem; white-space: nowrap;
         }
       `}</style>
 
       <div id="drag-ghost" ref={dragGhost}></div>
 
-      <div style={{ width: '100%', maxWidth: '1400px' }}>
-        {/* Progress Tracker UI */}
+      <div style={{ width: '100%', maxWidth: '1400px', position: 'relative' }}>
+        
+        {/* Progress Board */}
         <div style={{
-          position: 'fixed', top: '20px', left: '20px', zIndex: 100,
-          backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)', padding: '15px', borderRadius: '20px', minWidth: '180px'
+          position: 'absolute', top: '-15px', left: '10px',
+          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.4)',
+          backdropFilter: 'blur(15px)', padding: '16px 24px', borderRadius: '22px', minWidth: '200px', zIndex: 5
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'white', fontSize: '0.8rem' }}>
-            <span>PROGRESS</span>
-            <span>{progress}%</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: '900', color: isDarkMode ? '#cbd5e1' : '#475569' }}>BOARD PROGRESS</span>
+            <span style={{ fontSize: '1.1rem', fontWeight: '900', color: isDarkMode ? '#f1f5f9' : '#1e293b' }}>{progress}%</span>
           </div>
-          <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '10px' }}>
-            <div style={{ width: `${progress}%`, height: '100%', backgroundColor: '#2563eb', transition: 'width 0.8s ease' }}></div>
+          <div style={{ width: '100%', height: '10px', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: '12px', overflow: 'hidden' }}>
+            <div className="progress-bar" style={{ width: `${progress}%`, height: '100%', backgroundColor: progress === 100 ? '#22c55e' : '#2563eb' }}></div>
           </div>
         </div>
 
-        <header style={{ textAlign: 'center', marginBottom: '40px', marginTop: '40px' }}>
-          <h1 style={{ color: isDarkMode ? 'white' : '#1e293b' }}>Kanban Board</h1>
-          <button onClick={() => setShowModal(true)} style={{ padding: '12px 30px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '12px' }}>+ Add Task</button>
+        <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ position: 'absolute', top: '-10px', right: '10px', backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'white', border: 'none', borderRadius: '50%', width: '45px', height: '45px', cursor: 'pointer', zIndex: 10 }}>
+          {isDarkMode ? '🌙' : '☀️'}
+        </button>
+
+        <header style={{ textAlign: 'center', marginBottom: '40px', paddingTop: '60px' }}>
+          <h1 style={{ fontSize: 'clamp(2.2rem, 8vw, 3.8rem)', fontWeight: '900', color: isDarkMode ? '#f8fafc' : '#1f2937' }}>Kanban Board</h1>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+            <input type="text" placeholder="Search tasks..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: '90%', maxWidth: '450px', padding: '14px 24px', borderRadius: '18px', border: 'none', backgroundColor: isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.45)', color: isDarkMode ? 'white' : '#1f2937', outline: 'none' }} />
+            <button onClick={() => { setIsEditing(null); setNewTask({ title: '', description: '', priority: 'low' }); setShowModal(true); }} style={{ backgroundColor: '#2563eb', color: 'white', padding: '14px 36px', borderRadius: '16px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ Add New Task</button>
+          </div>
         </header>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px', width: '100%' }}>
           {['todo', 'inProgress', 'done'].map((col) => (
-            <div key={col} data-col={col} 
-                 onDragOver={(e) => e.preventDefault()} 
-                 onDrop={(e) => moveTask(e.dataTransfer.getData("taskId"), e.dataTransfer.getData("sourceCol"), col)}
-                 className="kanban-column"
-                 style={{ backgroundColor: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)', padding: '25px', borderRadius: '32px', minHeight: '500px' }}>
-              
-              <h2 style={{ textAlign: 'center', color: isDarkMode ? '#94a3b8' : '#475569' }}>{col.toUpperCase()}</h2>
+            <div key={col} data-col={col} onDragOver={onDragOver} onDrop={(e) => onDrop(e, col)} className="kanban-column"
+              style={{ backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.82)' : 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(22px)', padding: '25px', borderRadius: '32px', minHeight: '550px' }}
+            >
+              <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: isDarkMode ? '#94a3b8' : '#475569', marginBottom: '30px', textAlign: 'center' }}>
+                {col === 'inProgress' ? '🚀 In Progress' : col === 'todo' ? '📝 To Do' : '✅ Done'}
+              </h2>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {/* --- AUTO-SORTING LOGIC INTEGRATED HERE --- */}
                 {tasks[col]
+                  .filter(task => task.title.toLowerCase().includes(searchTerm.toLowerCase()))
                   .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
                   .map((task) => (
-                  <div key={task.id} className="task-card"
-                    draggable="true"
-                    onDragStart={(e) => {
-                        e.dataTransfer.setData("taskId", task.id);
-                        e.dataTransfer.setData("sourceCol", col);
-                    }}
+                  <div key={task.id} className="task-card" draggable="true" 
+                    onDragStart={(e) => onDragStart(e, task.id, col)} 
+                    onDragEnd={onDragEnd}
                     onTouchStart={(e) => onTouchStart(e, task, col)}
                     onTouchMove={onTouchMove}
                     onTouchEnd={onTouchEnd}
-                    style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '22px', borderRadius: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+                    style={{ position: 'relative', backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '22px', borderRadius: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>⠿</span>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: getDotColor(task.priority) }}></div>
                         <span style={{ fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>{task.priority.toUpperCase()}</span>
+                      </div>
+                      
+                      <div style={{ position: 'relative' }} ref={activeMenu === task.id ? menuRef : null}>
+                        <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === task.id ? null : task.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', fontSize: '1.2rem' }}>⋮</button>
+                        {activeMenu === task.id && (
+                          <div style={{ position: 'absolute', right: 0, top: '25px', backgroundColor: isDarkMode ? '#334155' : 'white', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', zIndex: 20, width: '110px', border: '1px solid #ddd', overflow: 'hidden' }}>
+                            <button onClick={() => { setIsEditing({ col, taskId: task.id }); setNewTask({ title: task.title, description: task.description, priority: task.priority }); setShowModal(true); setActiveMenu(null); }} style={{ display: 'block', width: '100%', padding: '10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: isDarkMode ? 'white' : 'black' }}>Edit</button>
+                            <button onClick={() => deleteTask(col, task.id)} style={{ display: 'block', width: '100%', padding: '10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: '#ef4444' }}>Delete</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <h3 style={{ margin: '5px 0', color: isDarkMode ? 'white' : 'black' }}>{task.title}</h3>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>{task.description}</p>
+                    <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', fontWeight: '800', color: isDarkMode ? '#f1f5f9' : '#1f2937' }}>{task.title}</h3>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: isDarkMode ? '#94a3b8' : '#6b7280' }}>{task.description}</p>
                   </div>
                 ))}
               </div>
@@ -179,15 +217,23 @@ function App() {
         </div>
       </div>
 
-      {/* Basic Modal */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '30px', borderRadius: '20px' }}>
-            <button onClick={() => {
-                 setTasks({...tasks, todo: [...tasks.todo, {id: Date.now().toString(), title: "New Task", description: "Desc", priority: "low"}]});
-                 setShowModal(false);
-            }}>Quick Add Sample Task</button>
-            <button onClick={() => setShowModal(false)}>Cancel</button>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px' }}>
+            <h2 style={{ marginBottom: '25px', color: isDarkMode ? '#f1f5f9' : '#111827' }}>{isEditing ? 'Edit Task' : 'New Task'}</h2>
+            <form onSubmit={handleSaveTask}>
+              <input type="text" placeholder="Title" required value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} style={{ width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #ccc', boxSizing: 'border-box', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? '#fff' : '#000' }} />
+              <textarea placeholder="Description" value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} style={{ width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #ccc', height: '100px', boxSizing: 'border-box', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? '#fff' : '#000' }} />
+              <select value={newTask.priority} onChange={(e) => setNewTask({...newTask, priority: e.target.value})} style={{ width: '100%', padding: '14px', marginBottom: '25px', borderRadius: '12px', border: '1px solid #ccc', boxSizing: 'border-box', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? '#fff' : '#000' }}>
+                <option value="low">Low Priority</option>
+                <option value="medium">Medium Priority</option>
+                <option value="high">High Priority</option>
+              </select>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="submit" style={{ flex: 1, backgroundColor: '#2563eb', color: 'white', padding: '14px', borderRadius: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Save</button>
+                <button type="button" onClick={() => { setShowModal(false); setIsEditing(null); }} style={{ flex: 1, backgroundColor: '#ccc', padding: '14px', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
