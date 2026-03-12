@@ -14,9 +14,9 @@
 
 ## 🛠️ Tech Stack Used
 * **HTML5** & **CSS3** (Glassmorphism UI)
-* **JavaScript** (ES6+)
-* **React.js** (State Management & Hooks)
-* **Netlify** (Continuous Deployment)
+* **JavaScript** 
+* **React.js** 
+* **Vercel** (Continuous Deployment)
 
 ---
 ## 📸 Screenshots
@@ -33,4 +33,4 @@
 ---
 
 ## 🔗 Live Deployment
-**Check it out here:** [https://kanbanprojectgdc.netlify.app/](https://kanbanprojectgdc.netlify.app/)
+**Check it out here:** [https://kanbanprojectgdc.netlify.app/](https://kanban-project-gray.vercel.app/)
