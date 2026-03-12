@@ -33,4 +33,4 @@
 ---
 
 ## 🔗 Live Deployment
-**Check it out here:** [https://kanbanprojectgdc.netlify.app/](https://kanban-project-gray.vercel.app/)
+**Check it out here:** [https://kanban-project-gray.vercel.app/](https://kanban-project-gray.vercel.app/)
