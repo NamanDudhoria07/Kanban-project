@@ -9,10 +9,12 @@ function App() {
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'low' });
   const [activeMenu, setActiveMenu] = useState(null);
   
-  // Refs for Dragging and UI
   const menuRef = useRef(null);
   const dragGhost = useRef(null);
   const dragData = useRef({ id: null, col: null });
+
+  // Priority mapping for sorting
+  const priorityWeight = { 'high': 3, 'medium': 2, 'low': 1 };
 
   const totalTasks = tasks.todo.length + tasks.inProgress.length + tasks.done.length;
   const progress = totalTasks > 0 ? Math.round((tasks.done.length / totalTasks) * 100) : 0;
@@ -30,7 +32,7 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- DESKTOP DRAG LOGIC ---
+  // --- DRAG LOGIC ---
   const onDragStart = (e, taskId, sourceCol) => {
     e.dataTransfer.setData("taskId", taskId);
     e.dataTransfer.setData("sourceCol", sourceCol);
@@ -46,11 +48,10 @@ function App() {
     if (sourceCol && destCol && taskId) moveTask(taskId, sourceCol, destCol);
   };
 
-  // --- MOBILE TOUCH DRAG LOGIC ---
+  // --- TOUCH LOGIC ---
   const onTouchStart = (e, task, col) => {
     const touch = e.touches[0];
     dragData.current = { id: task.id, col: col };
-    
     if (dragGhost.current) {
       dragGhost.current.innerHTML = `<strong>${task.title}</strong>`;
       dragGhost.current.style.display = 'block';
@@ -69,21 +70,14 @@ function App() {
 
   const onTouchEnd = (e) => {
     if (!dragData.current.id) return;
-
     const touch = e.changedTouches[0];
-    
-    // --- THE CRITICAL FIX ---
-    // Hide ghost BEFORE checking which column is underneath
     if (dragGhost.current) dragGhost.current.style.display = 'none';
-
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
     const column = element?.closest('.kanban-column');
-    
     if (column) {
       const destCol = column.getAttribute('data-col');
       moveTask(dragData.current.id, dragData.current.col, destCol);
     }
-    
     dragData.current = { id: null, col: null };
   };
 
@@ -91,7 +85,6 @@ function App() {
     if (sourceCol === destCol) return;
     const taskToMove = tasks[sourceCol].find(t => t.id === taskId);
     if (!taskToMove) return;
-
     setTasks(prev => ({
       ...prev,
       [sourceCol]: prev[sourceCol].filter(t => t.id !== taskId),
@@ -143,7 +136,6 @@ function App() {
         }
       `}</style>
 
-      {/* Touch Drag Ghost Element */}
       <div id="drag-ghost" ref={dragGhost}></div>
 
       <div style={{ width: '100%', maxWidth: '1400px', position: 'relative' }}>
@@ -169,7 +161,10 @@ function App() {
 
         <header style={{ textAlign: 'center', marginBottom: '40px', paddingTop: '60px' }}>
           <h1 style={{ fontSize: 'clamp(2.2rem, 8vw, 3.8rem)', fontWeight: '900', color: isDarkMode ? '#f8fafc' : '#1f2937' }}>Kanban Board</h1>
-          <button onClick={() => { setIsEditing(null); setNewTask({ title: '', description: '', priority: 'low' }); setShowModal(true); }} style={{ backgroundColor: '#2563eb', color: 'white', padding: '14px 36px', borderRadius: '16px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ Add New Task</button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+            <input type="text" placeholder="Search tasks..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: '90%', maxWidth: '450px', padding: '14px 24px', borderRadius: '18px', border: 'none', backgroundColor: isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.45)', color: isDarkMode ? 'white' : '#1f2937', outline: 'none' }} />
+            <button onClick={() => { setIsEditing(null); setNewTask({ title: '', description: '', priority: 'low' }); setShowModal(true); }} style={{ backgroundColor: '#2563eb', color: 'white', padding: '14px 36px', borderRadius: '16px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ Add New Task</button>
+          </div>
         </header>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px', width: '100%' }}>
@@ -182,7 +177,11 @@ function App() {
               </h2>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {tasks[col].map((task) => (
+                {/* --- AUTO-SORTING LOGIC INTEGRATED HERE --- */}
+                {tasks[col]
+                  .filter(task => task.title.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
+                  .map((task) => (
                   <div key={task.id} className="task-card" draggable="true" 
                     onDragStart={(e) => onDragStart(e, task.id, col)} 
                     onDragEnd={onDragEnd}
