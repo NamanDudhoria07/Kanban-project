@@ -12,15 +12,12 @@ function App() {
   const menuRef = useRef(null);
   const dragGhost = useRef(null);
   const dragData = useRef({ id: null, col: null });
-
-  // REFS FOR PRECISION TOUCH [SCROLL FIX]
   const longPressTimer = useRef(null);
   const isDragging = useRef(false);
   const touchStartPos = useRef({ x: 0, y: 0 });
 
   const priorityWeight = { 'high': 3, 'medium': 2, 'low': 1 };
-  const totalTasks = tasks.todo.length + tasks.inProgress.length + tasks.done.length;
-  const progress = totalTasks > 0 ? Math.round((tasks.done.length / totalTasks) * 100) : 0;
+  const progress = Math.round((tasks.done.length / (tasks.todo.length + tasks.inProgress.length + tasks.done.length || 1)) * 100);
 
   useEffect(() => {
     localStorage.setItem('kanban-theme', JSON.stringify(isDarkMode));
@@ -35,7 +32,6 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- SHARED MOVEMENT LOGIC ---
   const moveTask = (taskId, sourceCol, destCol) => {
     if (!sourceCol || !destCol || sourceCol === destCol) return;
     const taskToMove = tasks[sourceCol].find(t => t.id === taskId);
@@ -48,21 +44,7 @@ function App() {
     }));
   };
 
-  // --- PC DRAG LOGIC ---
-  const onDragStart = (e, taskId, sourceCol) => {
-    e.dataTransfer.setData("taskId", taskId);
-    e.dataTransfer.setData("sourceCol", sourceCol);
-    e.currentTarget.style.opacity = '0.4';
-  };
-  const onDragEnd = (e) => { e.currentTarget.style.opacity = '1'; };
-  const onDragOver = (e) => e.preventDefault();
-  const onDrop = (e, destCol) => {
-    const taskId = e.dataTransfer.getData("taskId");
-    const sourceCol = e.dataTransfer.getData("sourceCol");
-    moveTask(taskId, sourceCol, destCol);
-  };
-
-  // --- MOBILE TOUCH LOGIC (LONG-PRESS & SCROLL FIX) ---
+  // --- REFINED TOUCH LOGIC ---
   const onTouchStart = (e, task, col) => {
     if (e.target.closest('button')) return;
     const touch = e.touches[0];
@@ -84,14 +66,12 @@ function App() {
 
   const onTouchMove = (e) => {
     const touch = e.touches[0];
-    const dx = Math.abs(touch.clientX - touchStartPos.current.x);
-    const dy = Math.abs(touch.clientY - touchStartPos.current.y);
-
     if (!isDragging.current) {
+      const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+      const dy = Math.abs(touch.clientY - touchStartPos.current.y);
       if (dx > 10 || dy > 10) clearTimeout(longPressTimer.current);
       return; 
     }
-
     e.preventDefault(); 
     if (dragGhost.current) {
       dragGhost.current.style.left = `${touch.clientX - 50}px`;
@@ -106,11 +86,24 @@ function App() {
     const touch = e.changedTouches[0];
     if (dragGhost.current) dragGhost.current.style.display = 'none';
 
-    const element = document.elementFromPoint(touch.clientX, touch.clientY);
-    const column = element?.closest('.kanban-column');
+    // NEW BOX-CHECK LOGIC: Instead of checking "what" we touched, 
+    // we check "where" we released our finger relative to the columns.
+    const columns = document.querySelectorAll('.kanban-column');
+    let destCol = null;
+
+    columns.forEach(colEl => {
+      const rect = colEl.getBoundingClientRect();
+      if (
+        touch.clientX >= rect.left &&
+        touch.clientX <= rect.right &&
+        touch.clientY >= rect.top &&
+        touch.clientY <= rect.bottom
+      ) {
+        destCol = colEl.getAttribute('data-col');
+      }
+    });
     
-    if (column) {
-      const destCol = column.getAttribute('data-col');
+    if (destCol) {
       moveTask(dragData.current.id, dragData.current.col, destCol);
     }
     
@@ -118,7 +111,7 @@ function App() {
     dragData.current = { id: null, col: null };
   };
 
-  // --- UI HANDLERS ---
+  // --- UI Logic (Add, Edit, Delete) ---
   const handleSaveTask = (e) => {
     e.preventDefault();
     if (!newTask.title) return;
@@ -141,7 +134,7 @@ function App() {
   return (
     <div style={{
       backgroundImage: isDarkMode ? 'url("/dark-mode-kanban.jpg")' : 'url("/light-mode-kanban.jpg")',
-      backgroundSize: 'cover', backgroundAttachment: 'fixed', backgroundPosition: 'center', minHeight: '100vh',
+      backgroundSize: 'cover', backgroundAttachment: 'fixed', minHeight: '100vh',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       padding: '40px 20px', fontFamily: '"Inter", sans-serif', boxSizing: 'border-box', overflowX: 'hidden'
     }}>
@@ -159,12 +152,11 @@ function App() {
 
       <div style={{ width: '100%', maxWidth: '1400px', position: 'relative' }}>
         
-        {/* Progress Tracker Panel */}
+        {/* Progress Board */}
         <div style={{
           position: 'absolute', top: '-15px', left: '10px',
           backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.4)',
-          backdropFilter: 'blur(15px)', padding: '16px 24px', borderRadius: '22px', minWidth: '200px', zIndex: 5,
-          border: '1px solid rgba(255,255,255,0.2)'
+          backdropFilter: 'blur(15px)', padding: '16px 24px', borderRadius: '22px', minWidth: '200px', zIndex: 5
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.8rem', fontWeight: '900', color: isDarkMode ? '#cbd5e1' : '#475569' }}>BOARD PROGRESS</span>
@@ -189,7 +181,7 @@ function App() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px', width: '100%' }}>
           {['todo', 'inProgress', 'done'].map((col) => (
-            <div key={col} data-col={col} onDragOver={onDragOver} onDrop={(e) => onDrop(e, col)} className="kanban-column"
+            <div key={col} data-col={col} onDragOver={(e) => e.preventDefault()} onDrop={(e) => moveTask(e.dataTransfer.getData("taskId"), e.dataTransfer.getData("sourceCol"), col)} className="kanban-column"
               style={{ backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.82)' : 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(22px)', padding: '25px', borderRadius: '32px', minHeight: '550px' }}
             >
               <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: isDarkMode ? '#94a3b8' : '#475569', marginBottom: '30px', textAlign: 'center' }}>
@@ -202,11 +194,8 @@ function App() {
                   .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
                   .map((task) => (
                   <div key={task.id} className="task-card" draggable="true" 
-                    onDragStart={(e) => onDragStart(e, task.id, col)} 
-                    onDragEnd={onDragEnd}
-                    onTouchStart={(e) => onTouchStart(e, task, col)}
-                    onTouchMove={onTouchMove}
-                    onTouchEnd={onTouchEnd}
+                    onDragStart={(e) => { e.dataTransfer.setData("taskId", task.id); e.dataTransfer.setData("sourceCol", col); }}
+                    onTouchStart={(e) => onTouchStart(e, task, col)} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
                     style={{ position: 'relative', backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '22px', borderRadius: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -215,7 +204,6 @@ function App() {
                         <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#f59e0b' : '#22c55e' }}></div>
                         <span style={{ fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>{task.priority.toUpperCase()}</span>
                       </div>
-                      
                       <div style={{ position: 'relative' }} ref={activeMenu === task.id ? menuRef : null}>
                         <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === task.id ? null : task.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', fontSize: '1.2rem' }}>⋮</button>
                         {activeMenu === task.id && (
@@ -238,7 +226,7 @@ function App() {
 
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ backgroundColor: isDarkMode ? '#1e293b' : 'white', padding: '35px', borderRadius: '28px', width: '90%', maxWidth: '420px' }}>
             <h2 style={{ marginBottom: '25px', color: isDarkMode ? '#f1f5f9' : '#111827' }}>{isEditing ? 'Edit Task' : 'New Task'}</h2>
             <form onSubmit={handleSaveTask}>
               <input type="text" placeholder="Title" required value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} style={{ width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #ccc', boxSizing: 'border-box', backgroundColor: isDarkMode ? '#0f172a' : '#fff', color: isDarkMode ? '#fff' : '#000' }} />
